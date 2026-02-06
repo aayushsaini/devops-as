@@ -1,0 +1,47 @@
+name: CD
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy-to-eks:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        uses: aws-actions/eks-update-kubeconfig@v2
+        with:
+          cluster-name: ${{ secrets.EKS_CLUSTER_NAME }}
+          region: ${{ secrets.AWS_REGION }}
+
+      - name: Create imagePullSecret for Artifactory
+        run: |
+          kubectl create secret docker-registry jfrog-pull-secret \
+            --docker-server=${{ secrets.ARTIFACTORY_REGISTRY }} \
+            --docker-username=${{ secrets.ARTIFACTORY_USERNAME }} \
+            --docker-password=${{ secrets.ARTIFACTORY_PASSWORD }} \
+            --docker-email=not@needed.local --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy to EKS (apply or update image)
+        env:
+          IMAGE: ${{ secrets.ARTIFACTORY_REGISTRY }}/${{ secrets.ARTIFACTORY_REPOSITORY }}/aay/fastapi-app:${{ github.sha }}
+        run: |
+          # If deployment exists update image, otherwise apply manifest with the desired image
+          if kubectl get deployment devops-app >/dev/null 2>&1; then
+            kubectl set image deployment/devops-app devops-app=$IMAGE --record
+          else
+            sed -e "s|IMAGE_PLACEHOLDER|$IMAGE|g" deployment.yaml | kubectl apply -f -
+          fi

@@ -54,3 +54,11 @@ def read_root():
         "message": "Welcome to the DevOps Demo App!",
         "available_endpoints": ["/health", "/version", "/env", "/tips"]
     }
+
+@app.get("/login", summary="Simulate Login")
+def login():
+    return {"status": "authenticated"}
+
+@app.get("/logout", summary="Simulate Logout")
+def logout():
+    return {"status": "logged out"}
